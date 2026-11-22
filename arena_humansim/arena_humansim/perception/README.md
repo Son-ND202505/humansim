@@ -28,6 +28,14 @@ class Perception(Loggable, ABC):
 
 On top of the range + FOV gate, every agent always perceives neighbors within its `proximity_sense` radius (default ~1 m, Hall's personal-zone upper bound) regardless of bearing. The gate is `(range_ok & fov_ok) | prox_ok` in both paths. Without this, a co-located peer standing behind an agent at a gathering spot would be invisible, and the interaction manager would split a single GROUP_CONVERSATION into two 1p FORMING interactions that never merge. The `query_ball_point` / `sparse_distance_matrix` call uses `max(vision_range, proximity_sense)` so short-range neighbors still reach the per-row filter.
 
+## Hearing, cane touch and detection delay
+
+Agents with `hearing_range` or `cane_reach` above 0 sense beyond sight. They hear pedestrians out to `hearing_range` and robots out to `hearing_range * pool.robot_loudness`, at any bearing. The `robot_loudness` node parameter sets the robot factor: 0 is silent, 1 is the robot the type's range assumes. They also touch anything whose disc reaches into the cane rectangle ahead of them (`cane_reach` long, `cane_width` wide).
+
+These pairs are added after the sight and robot gates. `robot_blind` still removes robots, and walls block these pairs for agents with `vision_occlusion`. Both pool paths build them with `_channel_pairs`; the KDTree path widens its pair search to the farthest hearing or cane reach and checks only those pairs. The per-agent `compute` uses `_channel_hit`, which treats targets as points and applies no delay. ORCA keeps its own neighbor search, so it reads these ranges only as a distance cut on the robot's centre, at any bearing, without the delay.
+
+With `detection_delay` above 0 and a `dt` passed to `compute_pool`, a robot is listed only after the agent has sensed it for that long without a break. The start times live on the pool, keyed by agent ids, and `AgentPool.reset` clears them. Agents that declare none of these fields perceive exactly as before.
+
 ## Dense vs KDTree paths
 
 `DefaultPerception` switches strategies at its `small_n_threshold` (default 64):

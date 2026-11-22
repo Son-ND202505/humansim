@@ -75,6 +75,16 @@ class AgentPool:
         self.robot_repulsion_gain = np.ones(capacity, dtype=np.float64)
         self.robot_reaction_gain = np.ones(capacity, dtype=np.float64)
         self.robot_blind = np.zeros(capacity, dtype=np.bool_)
+        self.robot_yields = np.ones(capacity, dtype=np.bool_)
+        self.hearing_range = np.zeros(capacity, dtype=np.float64)
+        self.cane_reach = np.zeros(capacity, dtype=np.float64)
+        self.cane_width = np.zeros(capacity, dtype=np.float64)
+        self.detection_delay = np.zeros(capacity, dtype=np.float64)
+        # Scales every robot's hearing distance: 0 is a silent robot, 1 the robot the agent types' hearing_range assumes.
+        self.robot_loudness = 1.0
+        # (observer id, robot id) -> perception clock when the observer started sensing that robot, for detection_delay.
+        self.robot_sensed_since: dict[tuple[int, int], float] = {}
+        self.perception_clock = 0.0
 
         self.goal_pos = np.zeros((capacity, 2), dtype=np.float64)
         self.has_goal = np.zeros(capacity, dtype=np.bool_)
@@ -178,6 +188,11 @@ class AgentPool:
         self.robot_repulsion_gain[i] = perc.robot_repulsion_gain
         self.robot_reaction_gain[i] = perc.robot_reaction_gain
         self.robot_blind[i] = perc.robot_blind
+        self.robot_yields[i] = perc.robot_yields
+        self.hearing_range[i] = perc.hearing_range
+        self.cane_reach[i] = perc.cane_reach
+        self.cane_width[i] = perc.cane_width
+        self.detection_delay[i] = perc.detection_delay
 
     def swap_remove(self, agent_id: int) -> int | None:
         idx = self._id_to_idx.pop(agent_id)
@@ -204,6 +219,11 @@ class AgentPool:
                 self.robot_repulsion_gain,
                 self.robot_reaction_gain,
                 self.robot_blind,
+                self.robot_yields,
+                self.hearing_range,
+                self.cane_reach,
+                self.cane_width,
+                self.detection_delay,
                 self.has_goal,
                 self.has_terminal,
                 self.goal_theta,
@@ -228,6 +248,7 @@ class AgentPool:
     def reset(self) -> None:
         self.n = 0
         self._id_to_idx.clear()
+        self.robot_sensed_since.clear()
         for ext in self._extensions:
             ext.on_pool_reset()
 
@@ -323,6 +344,13 @@ class AgentPool:
         self.robot_repulsion_gain = _resize_1d(self.robot_repulsion_gain)
         self.robot_reaction_gain = _resize_1d(self.robot_reaction_gain)
         self.robot_blind = _resize_1d(self.robot_blind)
+        yields_new = np.ones(new_cap, dtype=self.robot_yields.dtype)
+        yields_new[:old] = self.robot_yields[:old]
+        self.robot_yields = yields_new
+        self.hearing_range = _resize_1d(self.hearing_range)
+        self.cane_reach = _resize_1d(self.cane_reach)
+        self.cane_width = _resize_1d(self.cane_width)
+        self.detection_delay = _resize_1d(self.detection_delay)
         self.goal_pos = _resize_2d(self.goal_pos)
         self.has_goal = _resize_1d(self.has_goal)
         self.terminal_pos = _resize_2d(self.terminal_pos)
