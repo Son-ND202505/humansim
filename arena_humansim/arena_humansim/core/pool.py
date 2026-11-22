@@ -14,6 +14,11 @@ _DEFAULT_CAPACITY = 512
 KIND_HUMAN = 0
 KIND_ROBOT = 1
 
+# Robot sound follows arena_auditory's drivetrain (sources/drivetrain/spec.py): the motor level grows with speed over 1 m/s and stops
+# below 0.02 m/s, and a level falls 6 dB per doubling of distance, so a robot is heard out to a distance in proportion to its speed.
+ROBOT_SOUND_REF_SPEED = 1.0
+ROBOT_SOUND_MIN_SPEED = 0.02
+
 
 def human_mask(pool: AgentPool) -> np.ndarray:
     return pool.kind[: pool.n] == KIND_HUMAN
@@ -80,7 +85,7 @@ class AgentPool:
         self.cane_reach = np.zeros(capacity, dtype=np.float64)
         self.cane_width = np.zeros(capacity, dtype=np.float64)
         self.detection_delay = np.zeros(capacity, dtype=np.float64)
-        # Scales every robot's hearing distance: 0 is a silent robot, 1 the robot the agent types' hearing_range assumes.
+        # Scales the distance every robot is heard at: 0 is a silent robot, 1 the robot the agent types' hearing_range assumes at 1 m/s.
         self.robot_loudness = 1.0
         # (observer id, robot id) -> perception clock when the observer started sensing that robot, for detection_delay.
         self.robot_sensed_since: dict[tuple[int, int], float] = {}
@@ -244,6 +249,12 @@ class AgentPool:
             swapped_id = None
         self.n = last
         return swapped_id
+
+    def robot_hearing_scale(self, rows: np.ndarray) -> np.ndarray:
+        """Factor on hearing_range out to which each row is heard: robot_loudness times speed over 1 m/s for robots, 0 below 0.02 m/s, 1 for people."""
+        speed = np.hypot(self.vel[rows, 0], self.vel[rows, 1])
+        robot = np.where(speed < ROBOT_SOUND_MIN_SPEED, 0.0, speed / ROBOT_SOUND_REF_SPEED) * self.robot_loudness
+        return np.where(self.kind[rows] == KIND_ROBOT, robot, 1.0)
 
     def reset(self) -> None:
         self.n = 0

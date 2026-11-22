@@ -32,6 +32,14 @@ class DefaultPerception(Perception):
     def attach(self, pool: AgentPool) -> None:
         self._pool = pool
 
+    def _heard_scale(self, agent_id: int) -> float:
+        """Hearing factor of one robot for the per-agent path: robot_loudness times its speed over 1 m/s."""
+        pool = self._pool
+        row = None if pool is None else pool._id_to_idx.get(agent_id)
+        if pool is None or row is None:
+            return 1.0 if pool is None else pool.robot_loudness
+        return float(pool.robot_hearing_scale(np.array([row]))[0])
+
     def prepare_tick(self, all_agents: dict[int, AgentState]) -> None:
         ids: list[int] = []
         positions: list[tuple[float, float]] = []
@@ -182,8 +190,8 @@ class DefaultPerception(Perception):
         max_range = float(max(pool.vision_range[:n].max(), pool.proximity_sense[:n].max()))
         chan_rows = _channel_rows(pool, n)
         if len(chan_rows) > 0:
-            # Farthest anyone is heard (robots scaled by robot_loudness) or touched (the cane's far corner plus the largest disc).
-            heard = float(pool.hearing_range[chan_rows].max()) * max(1.0, pool.robot_loudness)
+            # Farthest anyone is heard (robots scaled by loudness and speed) or touched (the cane's far corner plus the largest disc).
+            heard = float(pool.hearing_range[chan_rows].max()) * max(1.0, float(pool.robot_hearing_scale(np.arange(n)).max()))
             touched = float(np.hypot(pool.cane_reach[chan_rows], 0.5 * pool.cane_width[chan_rows]).max() + pool.agent_radius[:n].max())
             max_range = max(max_range, heard, touched)
         sdm = tree.sparse_distance_matrix(tree, max_range, output_type="coo_matrix")
@@ -315,8 +323,8 @@ class DefaultPerception(Perception):
         robot_prox = min(proximity_sense, robot_range)
         robot_fov = min(360.0, max(0.0, vision_fov + perception.robot_fov_offset))
 
-        loudness = self._pool.robot_loudness if self._pool is not None else 1.0
-        query_radius = max(vision_range, proximity_sense, perception.hearing_range * max(1.0, loudness), float(np.hypot(perception.cane_reach, 0.5 * perception.cane_width)))
+        loudest = float(self._pool.robot_hearing_scale(np.arange(self._pool.n)).max(initial=1.0)) if self._pool is not None else 1.0
+        query_radius = max(vision_range, proximity_sense, perception.hearing_range * loudest, float(np.hypot(perception.cane_reach, 0.5 * perception.cane_width)))
         neighbor_indices = self._shared_tree.query_ball_point([ox, oy], query_radius)
 
         candidates: list[int] = []
@@ -333,7 +341,7 @@ class DefaultPerception(Perception):
 
             nx, ny = self._shared_positions[idx]
             d = float(np.hypot(nx - ox, ny - oy))
-            if _channel_hit(perception, nx - ox, ny - oy, heading, d, loudness if nbr_is_robot else 1.0):
+            if _channel_hit(perception, nx - ox, ny - oy, heading, d, self._heard_scale(nid) if nbr_is_robot else 1.0):
                 candidates.append(idx)
                 continue
             within_prox = d <= eff_prox
@@ -391,13 +399,13 @@ def _channel_rows(pool: AgentPool, n: int) -> np.ndarray:
 
 def _channel_pairs(pool: AgentPool, positions: np.ndarray, row: np.ndarray, col: np.ndarray, n: int, occluder: Occluder | None) -> np.ndarray:
     """Keep mask over candidate (row, col) pairs: whether row senses col by hearing (any bearing, out to hearing_range, robots
-    scaled by pool.robot_loudness) or by touching it with the cane (a disc reaching into the rectangle cane_reach ahead by
+    scaled by pool.robot_hearing_scale: loudness times speed) or by touching it with the cane (a disc reaching into the rectangle cane_reach ahead by
     cane_width across). Walls block both for people with vision_occlusion; robot_blind people sense no robot."""
     dx = positions[col, 0] - positions[row, 0]
     dy = positions[col, 1] - positions[row, 1]
     is_robot = pool.kind[col] == KIND_ROBOT
     hearing = pool.hearing_range[row]
-    sensed = (hearing > 0.0) & (np.hypot(dx, dy) <= hearing * np.where(is_robot, pool.robot_loudness, 1.0))
+    sensed = (hearing > 0.0) & (np.hypot(dx, dy) <= hearing * pool.robot_hearing_scale(np.arange(n))[col])
     cos_h = np.cos(pool.theta[row])
     sin_h = np.sin(pool.theta[row])
     ahead = dx * cos_h + dy * sin_h
@@ -432,9 +440,9 @@ def _noticed(pool: AgentPool, row: np.ndarray, col: np.ndarray) -> np.ndarray:
     return keep
 
 
-def _channel_hit(perception: SampledPerception, dx: float, dy: float, heading: float, d: float, loudness: float) -> bool:
+def _channel_hit(perception: SampledPerception, dx: float, dy: float, heading: float, d: float, scale: float) -> bool:
     """Single-observer form of _channel_pairs for the per-agent fallback path: targets are points, and there is no detection delay."""
-    if perception.hearing_range > 0.0 and d <= perception.hearing_range * loudness:
+    if perception.hearing_range > 0.0 and d <= perception.hearing_range * scale:
         return True
     if perception.cane_reach <= 0.0:
         return False

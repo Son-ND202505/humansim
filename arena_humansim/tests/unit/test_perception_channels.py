@@ -38,11 +38,13 @@ def _cane_user(pool: AgentPool, agent_factory: Callable[..., BaseAgent], hearing
     pool.detection_delay[0] = delay
 
 
-def _add(pool: AgentPool, agent_factory: Callable[..., BaseAgent], aid: int, x: float, y: float, kind: int, radius: float = 0.3) -> int:
+def _add(pool: AgentPool, agent_factory: Callable[..., BaseAgent], aid: int, x: float, y: float, kind: int, radius: float = 0.3, speed: float = 1.0) -> int:
     pool.add_agent(agent_factory(agent_id=aid, x=x, y=y))
     idx = pool.n - 1
     pool.kind[idx] = kind
     pool.agent_radius[idx] = radius
+    if kind == KIND_ROBOT:
+        pool.vel[idx] = (speed, 0.0)  # robots are heard in proportion to their speed; hearing_range is the distance at 1 m/s
     return idx
 
 
@@ -98,6 +100,22 @@ def test_a_robot_is_heard_from_any_bearing_out_to_the_scaled_range(pool_empty: C
     neighbors = _neighbors(pool, 0)
     assert near in neighbors
     assert far not in neighbors
+
+
+def test_a_robot_is_heard_in_proportion_to_its_speed_and_not_at_all_when_standing(pool_empty: Callable[..., AgentPool], agent_factory: Callable[..., BaseAgent]) -> None:
+    pool = pool_empty(capacity=8)
+    _cane_user(pool, agent_factory, hearing=2.0)
+    fast = _add(pool, agent_factory, 2, -1.5, 0.0, KIND_ROBOT, speed=1.0)
+    slow_far = _add(pool, agent_factory, 3, 0.0, 1.5, KIND_ROBOT, speed=0.5)
+    slow_near = _add(pool, agent_factory, 4, 0.0, -0.9, KIND_ROBOT, speed=0.5)
+    standing = _add(pool, agent_factory, 5, -0.5, 0.0, KIND_ROBOT, speed=0.01)
+
+    DefaultPerception().compute_pool(pool)
+    neighbors = _neighbors(pool, 0)
+    assert fast in neighbors, "at 1 m/s a robot is heard out to hearing_range"
+    assert slow_far not in neighbors, "at 0.5 m/s only out to half of it"
+    assert slow_near in neighbors
+    assert standing not in neighbors, "below 0.02 m/s a robot is silent"
 
 
 def test_robot_blind_people_sense_no_robot_through_any_channel(pool_empty: Callable[..., AgentPool], agent_factory: Callable[..., BaseAgent]) -> None:
@@ -164,6 +182,7 @@ def test_dense_and_kdtree_paths_agree_with_hearing_cane_and_occlusion_free_crowd
         pool.cane_reach[idx] = 1.2
         pool.cane_width[idx] = 1.0
     pool.robot_loudness = 0.6
+    pool.vel[:80, 0] = rng.uniform(0.0, 1.5, size=80)  # robots from silent to loud
 
     DefaultPerception(small_n_threshold=1000).compute_pool(pool)
     dense = (pool.neighbor_indptr.copy(), pool.neighbor_indices.copy())
@@ -201,7 +220,7 @@ def test_declaring_the_new_perception_fields_leaves_every_other_sampled_value_un
 
 
 def _notice_distance(agent_type: AgentType, loudness: float) -> float:
-    """Distance at which a person of `agent_type`, facing +x, first lists a robot driving at them from 8 m at 0.5 m/s."""
+    """Distance at which a person of `agent_type`, facing +x, first lists a robot driving at them from 8 m at 1 m/s."""
     from typing import Any, cast
 
     from arena_humansim.utils.types import AgentState, Pose2D
@@ -217,12 +236,13 @@ def _notice_distance(agent_type: AgentType, loudness: float) -> float:
     pool.kind[1] = KIND_ROBOT
     pool.agent_radius[1] = 0.3
     pool.robot_loudness = loudness
+    pool.vel[1] = (-1.0, 0.0)
     perception = DefaultPerception()
     for _ in range(200):
         perception.compute_pool(pool, dt=DT)
         if 1 in _neighbors(pool, 0):
             return float(pool.pos[1, 0])
-        pool.pos[1, 0] -= 0.5 * DT
+        pool.pos[1, 0] -= 1.0 * DT
     return 0.0
 
 
@@ -233,6 +253,6 @@ def test_in_a_head_on_encounter_the_cane_user_notices_the_robot_later_than_the_a
     cane_silent = _notice_distance(builtin["blind_white_cane"], loudness=0.0)
     rollator = _notice_distance(builtin["elder_rollator"], loudness=1.0)
     assert adult > 4.0, "the adult sees the robot at its vision range"
-    assert 1.5 < cane < 2.0, "heard at 2 m, listed half a second later"
-    assert 1.0 < cane_silent < 1.5, "a silent robot is found by the cane, 1.2 m plus its radius, half a second later"
+    assert 1.3 < cane < 1.6, "a robot at 1 m/s is heard at 2 m and listed half a second later"
+    assert 0.7 < cane_silent < 0.95, "a silent robot is found by the cane, 1.05 m plus its radius, half a second later"
     assert rollator < adult

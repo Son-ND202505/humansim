@@ -23,7 +23,7 @@ Perception (`perception:`):
 - `vision_fov` (degrees, full angle - 360 = omnidirectional)
 - `proximity_sense` (m) - near-field detection radius independent of FOV.
 - `vision_occlusion` (bool, not a distribution) - whether walls block line of sight. With it, walls also block hearing and the cane.
-- `hearing_range` (m, default 0 = off) - who the agent hears at any bearing: other pedestrians out to this range, robots out to this range times the `robot_loudness` node parameter (0 = silent robots).
+- `hearing_range` (m, default 0 = off) - who the agent hears at any bearing: other pedestrians out to this range, robots out to this range times the robot's speed over 1 m/s times the `robot_loudness` node parameter (0 = silent robots); a robot slower than 0.02 m/s is silent.
 - `cane_reach`, `cane_width` (m, default 0 = off) - the cane's sweep: the agent touches anything whose disc reaches into the rectangle `cane_reach` ahead and `cane_width` across.
 - `detection_delay` (s, default 0) - a robot joins the agent's neighbours only after the agent has sensed it, by any channel, for this long without a break.
 - `robot_awareness` - how this agent perceives robots. Accepts a preset name, `blind`, a boolean (`true` is `normal`, `false` is `blind`), a mapping of shifts, or a list of weighted entries for a crowd mixture. Mapping keys are `detection`, `fov`, `repulsion`, `reaction`, `blind` and `yields`; each value is a number of sigmas or a `{mean, std, clip_low, clip_high}` distribution of sigmas, and omitted keys stay at 0. A sigma is the agent's own spread of that dimension, so `detection: -2` moves the robot range by two times the `vision_range` std.

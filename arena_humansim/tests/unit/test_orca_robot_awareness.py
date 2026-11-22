@@ -215,6 +215,19 @@ def test_orca_hearing_and_cane_reach_extend_the_robot_cutoff_beyond_sight(
     ORCAPlanner().compute_pool(pool, dt=0.1)
     assert pool.vel[0, 0] < 0.95 or abs(pool.vel[0, 1]) > 1e-4, "the cane reaches the robot"
 
+    pool = _head_on(pool_empty, agent_factory, 1.0)
+    pool.vision_range[0] = 0.0
+    pool.hearing_range[0] = 2.0
+    ORCAPlanner().compute_pool(pool, dt=0.1)
+    assert pool.vel[0, 0] > 0.95, "a standing robot is silent"
+
+    pool = _head_on(pool_empty, agent_factory, 1.0)
+    pool.vision_range[0] = 0.0
+    pool.hearing_range[0] = 2.0
+    pool.vel[1] = (-1.0, 0.0)
+    ORCAPlanner().compute_pool(pool, dt=0.1)
+    assert pool.vel[0, 0] < 0.95 or abs(pool.vel[0, 1]) > 1e-4, "a robot driving at 1 m/s is heard out to 2 m"
+
 
 def test_orca_hearing_never_shortens_the_robot_range_of_a_seeing_pedestrian(
     pool_empty: Callable[..., AgentPool],
