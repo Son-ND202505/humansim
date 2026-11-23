@@ -323,7 +323,8 @@ class DefaultPerception(Perception):
         robot_prox = min(proximity_sense, robot_range)
         robot_fov = min(360.0, max(0.0, vision_fov + perception.robot_fov_offset))
 
-        loudest = float(self._pool.robot_hearing_scale(np.arange(self._pool.n)).max(initial=1.0)) if self._pool is not None else 1.0
+        p = self._pool
+        loudest = 1.0 if p is None else float(p.robot_hearing_scale(np.flatnonzero(p.kind[: p.n] == KIND_ROBOT)).max(initial=1.0))
         query_radius = max(vision_range, proximity_sense, perception.hearing_range * loudest, float(np.hypot(perception.cane_reach, 0.5 * perception.cane_width)))
         neighbor_indices = self._shared_tree.query_ball_point([ox, oy], query_radius)
 

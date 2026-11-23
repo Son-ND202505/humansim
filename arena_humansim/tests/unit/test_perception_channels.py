@@ -256,3 +256,32 @@ def test_in_a_head_on_encounter_the_cane_user_notices_the_robot_later_than_the_a
     assert 1.3 < cane < 1.6, "a robot at 1 m/s is heard at 2 m and listed half a second later"
     assert 0.7 < cane_silent < 0.95, "a silent robot is found by the cane, 1.05 m plus its radius, half a second later"
     assert rollator < adult
+
+
+def test_the_per_agent_path_hears_a_moving_robot_and_not_a_standing_one() -> None:
+    from typing import Any, cast
+
+    from arena_humansim.utils.types import AgentState, BeliefState, Pose2D
+
+    def agent(state: AgentState, params: object) -> BaseAgent:
+        return BaseAgent(state=state, params=cast(Any, params), global_planner=cast(Any, None), local_planner=cast(Any, None), animation=cast(Any, None))
+
+    rng = np.random.default_rng(5)
+    observer = agent(AgentState(agent_id=1, pose=Pose2D(x=0.0, y=0.0, theta=0.0)), sample_agent_type(BUILTIN_AGENTS["blind_white_cane"], rng))
+    robot_state = AgentState(agent_id=2, pose=Pose2D(x=-1.5, y=0.0, theta=0.0), kind=KIND_ROBOT)
+    pool = AgentPool(capacity=4)
+    pool.add_agent(observer)
+    pool.add_agent(agent(robot_state, sample_agent_type(AgentType(name="robot"), rng)))
+    pool.kind[1] = KIND_ROBOT
+    perception = DefaultPerception()
+    perception.attach(pool)
+    states = {1: observer.state, 2: robot_state}
+
+    def hears(speed: float) -> bool:
+        pool.vel[1] = (speed, 0.0)
+        perception.prepare_tick(states)
+        return robot_state in perception.compute(observer, states, cast(Any, None), BeliefState(agent_id=1)).observed_agents
+
+    assert hears(1.0), "at 1 m/s the robot 1.5 m behind is within the 2 m hearing range"
+    assert not hears(0.5), "at 0.5 m/s it is heard only out to 1 m"
+    assert not hears(0.0), "a standing robot is silent, and the cane does not reach behind"
